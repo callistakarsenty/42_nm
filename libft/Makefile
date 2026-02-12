@@ -1,5 +1,5 @@
 CC = cc
-CFLAGS = -Wall -Wextra -Werror -I$(HEADER)
+CFLAGS = -Wall -Wextra -Werror -I.
 
 NAME = libft.a
 SRCS = ft_atoi.c \
@@ -46,6 +46,9 @@ all: $(NAME)
 
 $(NAME): $(OBJS)
 	ar rcs $(NAME) $(OBJS)
+
+%.o: %.c $(HEADER)
+	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
 	rm -rf  $(OBJS)
