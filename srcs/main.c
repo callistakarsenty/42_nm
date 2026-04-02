@@ -32,20 +32,48 @@ static int is_elf(unsigned char *p, size_t size)
 	return (p[EI_MAG0] == ELFMAG0 && p[EI_MAG1] == ELFMAG1 && p[EI_MAG2] == ELFMAG2 && p[EI_MAG3] == ELFMAG3);
 }
 
-static int ft_sym(Elf64_Shdr *shdr, void *map, size_t size, int sym_i)
+static char	get_symbol(Elf64_Sym *s, Elf64_Shdr *shdr)
 {
-	(void)size;
-	(void)sym_i;
+	char	c = '?';
+    Elf64_Shdr sec = shdr[s->st_shndx];
+
+	if (ELF64_ST_BIND(s->st_info) == STB_WEAK)
+	{
+    	if (ELF64_ST_TYPE(s->st_info) == STT_OBJECT)
+        	c = (s->st_shndx == SHN_UNDEF) ? 'v' : 'V';
+    	else
+        	c = (s->st_shndx == SHN_UNDEF) ? 'w' : 'W';
+	}
+    else if (s->st_shndx == SHN_UNDEF)
+        c = 'U';
+    else if (s->st_shndx == SHN_ABS)
+        c = 'A';
+    else if (sec.sh_type == SHT_NOBITS)
+        c = 'B';
+    else if ((sec.sh_flags & SHF_ALLOC) && (sec.sh_flags & SHF_EXECINSTR))
+        c = 'T';
+    else if (sec.sh_flags & SHF_WRITE)
+        c = 'D';
+	else
+		c = 'R';
+	if (ELF64_ST_BIND(s->st_info) == STB_LOCAL && c != '?' && c != 'U')
+			c = ft_tolower(c);
+    return (c);
+}
+
+static int read_symbols(Elf64_Shdr *shdr, void *map, int i)
+{
 	size_t		count;
 	Elf64_Shdr	symsec;
 	Elf64_Sym 	*sym;
+	Elf64_Shdr	strsec;
+	char		*strtab;
 
-	symsec = shdr[sym_i];
+	symsec = shdr[i];
 	count = symsec.sh_size / symsec.sh_entsize;
 	sym = (Elf64_Sym *)((char *)map + symsec.sh_offset);
-	int str_idx = symsec.sh_link;
-	Elf64_Shdr strsec = shdr[str_idx];
-	char *strtab = (char *)map + strsec.sh_offset;
+	strsec = shdr[symsec.sh_link];
+	strtab = (char *)map + strsec.sh_offset;
 	for (size_t j = 0; j < count; j++)
 	{
     	Elf64_Sym *s = &sym[j];
@@ -53,20 +81,19 @@ static int ft_sym(Elf64_Shdr *shdr, void *map, size_t size, int sym_i)
 		if (s->st_name >= strsec.sh_size)
 			continue;
 
+		if (ELF64_ST_TYPE(s->st_info) == STT_FILE)
+			continue;
+
 		char *name = strtab + s->st_name;
 		if (name[0] == '\0')
 			continue;
 
-		printf(C_GREEN "%016lx " C_RESET "%s\n", (unsigned long)s->st_value, name);
+		char type = get_symbol(s, shdr);
+		if (type == 'U')
+    		printf("                 %c %s\n", type, name);
+		else
+			printf("%016lx %c %s\n", s->st_value, type, name);
 	}
-	return (0);
-}
-
-static int ft_dyn(void *map, size_t size, int dyn_i)
-{
-	(void)map;
-	(void)size;
-	(void)dyn_i;
 	return (0);
 }
 
@@ -108,7 +135,7 @@ static int parse_elf64(void *map, size_t size, char *file)
 
 	shstrtab = (char *)map + shstr_sec.sh_offset;
 
-	printf(C_MAGENTA "%s: ELF64\n\n" C_RESET, file);
+	printf("\n%s: \n", file);
 
 	for (int i = 0; i < (int)ehdr->e_shnum; i++)
 	{
@@ -117,7 +144,7 @@ static int parse_elf64(void *map, size_t size, char *file)
 		if (shdr[i].sh_name < shstr_sec.sh_size)
 			name = shstrtab + shdr[i].sh_name;
 
-		printf(C_CYAN "[%2d] " C_RESET "%s\n", i, name);
+		//printf(C_CYAN "[%2d] " C_RESET "%s\n", i, name);
 
 		if (name[0] != '<')
 		{
@@ -127,12 +154,12 @@ static int parse_elf64(void *map, size_t size, char *file)
 				dyn_i = i;
 		}
 	}
-	printf("\n");
+	//printf("\n");
 	//int use_i = -1;
 	if (sym_i != -1)
-		return (ft_sym(shdr, map, size, sym_i));
+		return (read_symbols(shdr, map, sym_i));
 	else if (dyn_i != -1)
-		return (ft_dyn(map, size, dyn_i));
+		return (read_symbols(shdr, map, dyn_i));
 	else
 		return (0);
 
